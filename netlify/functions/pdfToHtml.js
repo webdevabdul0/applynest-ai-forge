@@ -11,28 +11,25 @@ const CORS_HEADERS = {
 export default async function(event, context) {
   // Handle CORS preflight request
   if (event.httpMethod === 'OPTIONS') {
-    return {
-      statusCode: 200,
+    return new Response('', {
+      status: 200,
       headers: CORS_HEADERS,
-      body: '',
-    };
+    });
   }
 
   if (event.httpMethod !== 'POST') {
-    return {
-      statusCode: 405,
+    return new Response('Method Not Allowed', {
+      status: 405,
       headers: CORS_HEADERS,
-      body: 'Method Not Allowed',
-    };
+    });
   }
 
   const apiKey = process.env.CLOUDCONVERT_API_KEY;
   if (!apiKey) {
-    return {
-      statusCode: 500,
+    return new Response('CloudConvert API key not set', {
+      status: 500,
       headers: CORS_HEADERS,
-      body: 'CloudConvert API key not set',
-    };
+    });
   }
 
   // Parse the incoming PDF file (base64-encoded)
@@ -40,19 +37,17 @@ export default async function(event, context) {
   try {
     body = JSON.parse(event.body);
   } catch {
-    return {
-      statusCode: 400,
+    return new Response('Invalid request body', {
+      status: 400,
       headers: CORS_HEADERS,
-      body: 'Invalid request body',
-    };
+    });
   }
   const { pdfBase64, fileName } = body;
   if (!pdfBase64) {
-    return {
-      statusCode: 400,
+    return new Response('Missing PDF data', {
+      status: 400,
       headers: CORS_HEADERS,
-      body: 'Missing PDF data',
-    };
+    });
   }
 
   // 1. Create a CloudConvert job
@@ -84,11 +79,10 @@ export default async function(event, context) {
   });
   const jobData = await jobRes.json();
   if (!jobData || !jobData.data || !jobData.data.id) {
-    return {
-      statusCode: 500,
+    return new Response('Failed to create CloudConvert job', {
+      status: 500,
       headers: CORS_HEADERS,
-      body: 'Failed to create CloudConvert job',
-    };
+    });
   }
   const jobId = jobData.data.id;
 
@@ -106,24 +100,21 @@ export default async function(event, context) {
       break;
     }
     if (pollData.data.status === 'error') {
-      return {
-        statusCode: 500,
+      return new Response('CloudConvert job failed', {
+        status: 500,
         headers: CORS_HEADERS,
-        body: 'CloudConvert job failed',
-      };
+      });
     }
   }
   if (!htmlUrl) {
-    return {
-      statusCode: 504,
+    return new Response('Timed out waiting for CloudConvert job', {
+      status: 504,
       headers: CORS_HEADERS,
-      body: 'Timed out waiting for CloudConvert job',
-    };
+    });
   }
 
-  return {
-    statusCode: 200,
+  return new Response(JSON.stringify({ htmlUrl }), {
+    status: 200,
     headers: CORS_HEADERS,
-    body: JSON.stringify({ htmlUrl }),
-  };
+  });
 } 
