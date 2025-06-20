@@ -13,6 +13,70 @@ import * as pdfjsLib from 'pdfjs-dist/build/pdf';
 import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.entry';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import ModernResume from '../templates/ModernResume';
+import ClassicResume from '../templates/ClassicResume';
+import TemplateGallery from '../templates/TemplateGallery';
+import ComprehensiveResume from '../templates/ComprehensiveResume';
+
+const mockComprehensiveData = {
+  fullName: 'Jane Doe',
+  email: 'jane.doe@email.com',
+  phone: '+1 555-123-4567',
+  location: 'San Francisco, CA',
+  summary: 'Creative and detail-oriented software engineer with 5+ years of experience.',
+  experience: [
+    { title: 'Senior Developer', company: 'TechCorp', location: 'San Francisco, CA', dates: '2020-Present', description: 'Led a team of 8 engineers. Built scalable web apps.' },
+    { title: 'Developer', company: 'Webify', location: 'Remote', dates: '2018-2020', description: 'Developed modern web applications.' }
+  ],
+  education: [
+    { degree: 'B.Sc. in Computer Science', institution: 'Stanford University', location: 'Stanford, CA', dates: '2014-2018', description: 'Graduated with honors.' }
+  ],
+  skills: ['JavaScript', 'React', 'Node.js', 'Python', 'Leadership'],
+  certifications: [
+    { name: 'AWS Certified Developer', issuer: 'Amazon', date: '2022' }
+  ],
+  projects: [
+    { name: 'Open Source CRM', link: 'https://github.com/jane/crm', description: 'Built a CRM used by 1000+ users.' }
+  ],
+  languages: ['English', 'Spanish'],
+  awards: [
+    { title: 'Employee of the Year', issuer: 'TechCorp', date: '2021', description: 'Recognized for outstanding performance.' }
+  ],
+  interests: ['Hiking', 'Photography', 'Chess'],
+  references: [
+    { name: 'John Smith', contact: 'john.smith@email.com', relationship: 'Manager at TechCorp' }
+  ]
+};
+
+const mockModernData = {
+  fullName: 'Jane Doe',
+  email: 'jane.doe@email.com',
+  phone: '+1 555-123-4567',
+  location: 'San Francisco, CA',
+  summary: 'Creative and detail-oriented software engineer with 5+ years of experience.',
+  experience: [
+    { title: 'Senior Developer', company: 'TechCorp', location: 'San Francisco, CA', dates: '2020-Present', description: 'Led a team of 8 engineers. Built scalable web apps.' }
+  ],
+  education: [
+    { degree: 'B.Sc. in Computer Science', institution: 'Stanford University', location: 'Stanford, CA', dates: '2014-2018', description: 'Graduated with honors.' }
+  ],
+  skills: ['JavaScript', 'React', 'Node.js', 'Python', 'Leadership']
+};
+
+const mockClassicData = {
+  fullName: 'Jane Doe',
+  email: 'jane.doe@email.com',
+  phone: '+1 555-123-4567',
+  location: 'San Francisco, CA',
+  summary: 'Creative and detail-oriented software engineer with 5+ years of experience.',
+  experience: [
+    { title: 'Senior Developer', company: 'TechCorp', location: 'San Francisco, CA', dates: '2020-Present', description: 'Led a team of 8 engineers. Built scalable web apps.' }
+  ],
+  education: [
+    { degree: 'B.Sc. in Computer Science', institution: 'Stanford University', location: 'Stanford, CA', dates: '2014-2018', description: 'Graduated with honors.' }
+  ],
+  skills: ['JavaScript', 'React', 'Node.js', 'Python', 'Leadership']
+};
 
 const ResumeBuilder = () => {
   const [mode, setMode] = useState<'scratch' | 'upload'>('scratch');
@@ -42,6 +106,9 @@ const ResumeBuilder = () => {
   const [detectedFonts, setDetectedFonts] = useState<string[]>([]);
   const [fontStyles, setFontStyles] = useState<any[]>([]);
   const [htmlStyleInfo, setHtmlStyleInfo] = useState<any[]>([]);
+  const [selectedTemplate, setSelectedTemplate] = useState<string>('Modern');
+  const [showTemplateGallery, setShowTemplateGallery] = useState(false);
+  const [aiResumeData, setAiResumeData] = useState(null);
   
   const { toast } = useToast();
 
@@ -166,7 +233,7 @@ const ResumeBuilder = () => {
     if (!uploadedFile) return;
     (async () => {
       try {
-        const { styleInfo } = await convertPdfToHtmlAndParse(uploadedFile);
+        const { styleInfo, cssClassStyles } = await convertPdfToHtmlAndParse(uploadedFile);
         setHtmlStyleInfo(styleInfo);
       } catch (err) {
         // Optionally show error to user
@@ -175,11 +242,35 @@ const ResumeBuilder = () => {
     })();
   }, [uploadedFile]);
 
+  // Extract font styles from uploaded PDF when file changes
+  useEffect(() => {
+    if (!uploadedFile) {
+      setFontStyles([]);
+      return;
+    }
+    extractFontStylesFromPDF(uploadedFile).then(setFontStyles);
+  }, [uploadedFile]);
+
+  // Set resumeFont to the most common fontFamily from fontStyles
+  useEffect(() => {
+    if (fontStyles.length > 0) {
+      const fontCounts = fontStyles.reduce((acc: any, s) => {
+        if (s.fontFamily) {
+          acc[s.fontFamily] = (acc[s.fontFamily] ? Number(acc[s.fontFamily]) : 0) + 1;
+        }
+        return acc;
+      }, {});
+      const mostCommonFont = Object.entries(fontCounts).sort((a, b) => b[1] - a[1])[0]?.[0];
+      if (mostCommonFont) setResumeFont(mostCommonFont);
+    }
+  }, [fontStyles]);
+
   const handleGenerateResume = async () => {
     setLoading(true);
     setGeneratedResume('');
+    setAiResumeData(null);
     try {
-      const prompt = `Generate a professional resume for the following user.\n\nPersonal Info: ${JSON.stringify(personalInfo)}\n\nJob Description: ${jobDescription}\n\nExperience: ${experience}\n\nEducation: ${education}\n\nSkills: ${skills}`;
+      const prompt = `Generate a professional resume for the following user. Return ONLY a valid JSON object with these fields: fullName, email, phone, location, summary, experience, education, skills, certifications, projects, languages, awards, interests, references. If any section is missing, return it as an empty array or object. Do not include any explanation or text outside the JSON.\n\nPersonal Info: ${JSON.stringify(personalInfo)}\n\nJob Description: ${jobDescription}\n\nExperience: ${experience}\n\nEducation: ${education}\n\nSkills: ${skills}`;
       const token = import.meta.env.VITE_GITHUB_TOKEN;
       const endpoint = "https://models.github.ai/inference";
       const model = "openai/gpt-4.1";
@@ -199,6 +290,13 @@ const ResumeBuilder = () => {
       });
       const aiResume = response.choices?.[0]?.message?.content || '';
       setGeneratedResume(aiResume);
+      // Try to parse as JSON
+      try {
+        const json = JSON.parse(aiResume);
+        setAiResumeData(json);
+      } catch (e) {
+        setAiResumeData(null); // fallback to old logic
+      }
       toast({
         title: 'Resume Generated!',
         description: 'Your tailored resume is ready for review.',
@@ -240,8 +338,9 @@ const ResumeBuilder = () => {
   const handleTailorUploadedResume = async () => {
     setUploadAILoading(true);
     setUploadTailoredResume('');
+    setAiResumeData(null);
     try {
-      const prompt = `You are an expert resume writer. Here is a resume extracted from a PDF:\n\n${pdfText}\n\nHere is a job description to tailor the resume for:\n\n${uploadJobDescription}\n\nRewrite the resume to best match the job description, keeping the structure and content professional. Do NOT include any introductory phrases like 'Certainly!', 'Here is your tailored resume', or similar. Only output the resume content, formatted for direct use.`;
+      const prompt = `You are an expert resume writer. Here is a resume extracted from a PDF:\n\n${pdfText}\n\nHere is a job description to tailor the resume for:\n\n${uploadJobDescription}\n\nRewrite the resume to best match the job description, keeping the structure and content professional. Return ONLY a valid JSON object with these fields: fullName, email, phone, location, summary, experience, education, skills, certifications, projects, languages, awards, interests, references. Do not include any explanation or text outside the JSON.`;
       const token = import.meta.env.VITE_GITHUB_TOKEN;
       const endpoint = "https://models.github.ai/inference";
       const model = "openai/gpt-4.1";
@@ -261,6 +360,13 @@ const ResumeBuilder = () => {
       });
       const aiResume = response.choices?.[0]?.message?.content || '';
       setUploadTailoredResume(aiResume);
+      // Try to parse as JSON
+      try {
+        const json = JSON.parse(aiResume);
+        setAiResumeData(json);
+      } catch (e) {
+        setAiResumeData(null); // fallback to old logic
+      }
       toast({
         title: 'Resume Tailored!',
         description: 'Your tailored resume is ready for review.',
@@ -638,7 +744,7 @@ const ResumeBuilder = () => {
       reader.readAsDataURL(file);
     });
     // Call Netlify Function
-    const res = await fetch('https://applynest.netlify.app/.netlify/functions/pdfToHtml', {
+    const res = await fetch(`${window.location.origin}/.netlify/functions/pdfToHtml`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ pdfBase64: base64, fileName: file.name }),
@@ -659,8 +765,78 @@ const ResumeBuilder = () => {
         class: el.getAttribute('class') || '',
       };
     }).filter(info => info.text);
-    return { htmlUrl, styleInfo };
+    // Extract CSS from <style> tags
+    const styleTags = Array.from(doc.querySelectorAll('style'));
+    let cssText = '';
+    styleTags.forEach(tag => { cssText += tag.textContent || ''; });
+    // Parse CSS into a JS object
+    function parseCssToJs(css) {
+      const styleMap = {};
+      // Very basic CSS parser (does not handle nested or media queries)
+      const regex = /\.([\w-]+)\s*{([^}]*)}/g;
+      let match;
+      while ((match = regex.exec(css)) !== null) {
+        const className = match[1];
+        const rules = match[2].split(';').map(r => r.trim()).filter(Boolean);
+        const ruleObj = {};
+        rules.forEach(rule => {
+          const [key, value] = rule.split(':').map(s => s && s.trim());
+          if (key && value) ruleObj[key] = value;
+        });
+        styleMap[className] = ruleObj;
+      }
+      return styleMap;
+    }
+    const cssClassStyles = parseCssToJs(cssText);
+    return { htmlUrl, styleInfo, cssClassStyles };
   }
+
+  // Helper to build resume data for templates
+  const getResumeData = () => {
+    if (aiResumeData) {
+      return aiResumeData;
+    }
+    // Use AI content if available, otherwise use form state
+    if (mode === 'upload' && uploadTailoredResume) {
+      // Try to split AI content into sections (very basic)
+      const [exp, edu, skills] = uploadTailoredResume.split(/\n\s*Education:|\n\s*Skills:/);
+      return {
+        fullName: personalInfo.fullName || '',
+        email: personalInfo.email || '',
+        phone: personalInfo.phone || '',
+        location: personalInfo.location || '',
+        summary: '',
+        experience: exp?.replace(/^Experience:/, '').trim() || uploadTailoredResume,
+        education: edu?.trim() || '',
+        skills: skills?.trim() || '',
+      };
+    } else if (mode === 'scratch' && generatedResume) {
+      // Try to split AI content into sections (very basic)
+      const [exp, edu, skills] = generatedResume.split(/\n\s*Education:|\n\s*Skills:/);
+      return {
+        fullName: personalInfo.fullName || '',
+        email: personalInfo.email || '',
+        phone: personalInfo.phone || '',
+        location: personalInfo.location || '',
+        summary: '',
+        experience: exp?.replace(/^Experience:/, '').trim() || generatedResume,
+        education: edu?.trim() || '',
+        skills: skills?.trim() || '',
+      };
+    } else {
+      // Use form state
+      return {
+        fullName: personalInfo.fullName || '',
+        email: personalInfo.email || '',
+        phone: personalInfo.phone || '',
+        location: personalInfo.location || '',
+        summary: '',
+        experience: experience || '',
+        education: education || '',
+        skills: skills || '',
+      };
+    }
+  };
 
   return (
     <div className="p-6 bg-applynest-dark min-h-screen">
@@ -754,13 +930,22 @@ const ResumeBuilder = () => {
                     className="bg-applynest-dark border-applynest-slate-light/30 text-white min-h-24"
                     placeholder="Paste the job description here for AI to tailor your resume..."
                   />
-                  <Button
-                    onClick={handleTailorUploadedResume}
-                    disabled={uploadAILoading || !uploadJobDescription}
-                    className="mt-4 w-full bg-applynest-emerald hover:bg-applynest-emerald/90 py-4"
-                  >
-                    {uploadAILoading ? 'Tailoring Resume...' : 'Tailor Resume with AI'}
-                  </Button>
+                  <div className="mt-6 flex flex-row gap-4 items-center">
+                    <Button
+                      variant="outline"
+                      className="px-6 py-3"
+                      onClick={() => setShowTemplateGallery(true)}
+                    >
+                      Choose Template
+                    </Button>
+                    <Button
+                      onClick={handleTailorUploadedResume}
+                      disabled={uploadAILoading || !uploadJobDescription}
+                      className="bg-applynest-emerald hover:bg-applynest-emerald/90 py-4"
+                    >
+                      {uploadAILoading ? 'Tailoring Resume...' : 'Tailor Resume with AI'}
+                    </Button>
+                  </div>
                 </div>
               </div>
             )}
@@ -791,26 +976,42 @@ const ResumeBuilder = () => {
               </div>
             )}
             {/* Generated Resume Preview (A4 size) */}
-            <div className="w-full md:w-1/2 flex flex-col items-center">
-              <div className="text-white text-sm mb-2">Generated Resume (Editable Preview)</div>
-              <div
-                className="bg-white rounded-lg shadow-md overflow-auto border"
-                style={{
-                  width: 794, // A4 width px @ 96dpi
-                  minHeight: 1123, // A4 height px @ 96dpi
-                  maxWidth: '100%',
-                  fontFamily: resumeFont,
-                  padding: 32,
-                  boxSizing: 'border-box',
-                  margin: '0 auto',
-                }}
-              >
-                {uploadTailoredResume ? (
-                  <PaginatedResume content={uploadTailoredResume} fontFamily={resumeFont} styleMap={autoBuildStyleMap(fontStyles)} />
+            <div className="flex flex-col items-center gap-8 mt-8">
+              <div className="w-full max-w-3xl flex flex-col items-center">
+                {(!uploadedFile && !aiResumeData) ? (
+                  selectedTemplate === 'Comprehensive' ? (
+                    <ComprehensiveResume {...mockComprehensiveData} />
+                  ) : selectedTemplate === 'Modern' ? (
+                    <ModernResume {...mockModernData} />
+                  ) : (
+                    <ClassicResume {...mockClassicData} />
+                  )
                 ) : (
-                  <div className="text-gray-400 text-center">Your tailored resume will appear here.</div>
+                  selectedTemplate === 'Comprehensive' ? (
+                    <ComprehensiveResume {...getResumeData()} />
+                  ) : selectedTemplate === 'Modern' ? (
+                    <ModernResume {...getResumeData()} />
+                  ) : (
+                    <ClassicResume {...getResumeData()} />
+                  )
                 )}
               </div>
+              <TemplateGallery
+                open={showTemplateGallery}
+                onClose={() => setShowTemplateGallery(false)}
+                onSelect={(tpl) => { setSelectedTemplate(tpl); setShowTemplateGallery(false); }}
+                selectedTemplate={selectedTemplate}
+                sampleData={{
+                  fullName: 'Jane Doe',
+                  email: 'jane.doe@email.com',
+                  phone: '+1 555-123-4567',
+                  location: 'San Francisco, CA',
+                  summary: 'Creative and detail-oriented software engineer with 5+ years of experience.',
+                  experience: 'Senior Developer at TechCorp\n- Led a team of 8 engineers\n- Built scalable web apps',
+                  education: 'B.Sc. in Computer Science, Stanford University',
+                  skills: 'JavaScript, React, Node.js, Python, Leadership',
+                }}
+              />
             </div>
           </div>
           {/* Show parsed HTML style info summary below previews */}
@@ -1041,6 +1242,14 @@ const ResumeBuilder = () => {
           </div>
         </div>
       )}
+      {/* Add button to open template gallery (place near preview or top of page) */}
+      <TemplateGallery
+        open={showTemplateGallery}
+        onClose={() => setShowTemplateGallery(false)}
+        onSelect={tpl => { setSelectedTemplate(tpl); setShowTemplateGallery(false); }}
+        selectedTemplate={selectedTemplate}
+        sampleData={getResumeData()}
+      />
     </div>
   );
 };
